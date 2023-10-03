@@ -1,0 +1,16 @@
+# Copyright (c) 2023 LECRIVAIN Mathis <lecrivain.mathis@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+config ROBOCLAW_SERIAL
+	bool "Roboclaw control over serial line device"
+	default n
+	depends on SERIAL && SERIAL_HAS_DRIVER
+	depends on DT_HAS_BASICMICRO_ROBOCLAW_SERIAL_ENABLED
+	help
+	  Enable Roboclaw control over serial line support.
+	  
+if ROBOCLAW_SERIAL
+    module = ROBOCLAW_SERIAL
+    module-str = roboclaw
+    source "subsys/logging/Kconfig.template.log_config"
+endif
