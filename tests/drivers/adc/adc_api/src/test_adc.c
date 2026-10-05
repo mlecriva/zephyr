@@ -518,6 +518,97 @@ ZTEST(adc_basic, test_adc_repeated_samplings)
 }
 
 /*
+ * test_adc_repeated_samplings_prio1
+ */
+#if defined(CONFIG_ADC_SEQUENCE_PRIORITY)
+/* Room for 3 samplings of up to 4 channels. */
+#define PRIO1_REPEAT_BUFFER_SIZE	12
+static adc_data_size_t m_prio1_repeat_sample_buffer[PRIO1_REPEAT_BUFFER_SIZE];
+
+static uint8_t m_prio1_samplings_done;
+static enum adc_action prio1_repeated_samplings_callback(const struct device *dev,
+							 const struct adc_sequence *sequence,
+							 uint16_t sampling_index)
+{
+	++m_prio1_samplings_done;
+	if (m_prio1_samplings_done == 1U) {
+		/* After first sampling continue normally. */
+		return ADC_ACTION_CONTINUE;
+	}
+
+	/*
+	 * A repeated sampling overwrites the samples of the previous one, so
+	 * the slots of the third sampling stay empty. Finish as soon as they
+	 * are written, before the driver goes beyond the buffer.
+	 */
+	if (m_prio1_repeat_sample_buffer[2 * adc_channels_prio1_count] != INVALID_ADC_VALUE) {
+		return ADC_ACTION_FINISH;
+	}
+
+	/* The second sampling is repeated 9 times, then the sequence is finished. */
+	if (m_prio1_samplings_done < 10U) {
+		return ADC_ACTION_REPEAT;
+	}
+
+	return ADC_ACTION_FINISH;
+}
+
+static int test_task_repeated_samplings_prio1(void)
+{
+	int ret;
+	const struct adc_sequence_options options = {
+		.callback        = prio1_repeated_samplings_callback,
+		/*
+		 * 3 samplings are planned, but the callback finishes the
+		 * sequence after repeating the second one.
+		 */
+		.extra_samplings = 2,
+		/* Start consecutive samplings as fast as possible. */
+		.interval_us     = CONFIG_ADC_API_SAMPLE_INTERVAL_US,
+	};
+	struct adc_sequence sequence = {
+		.options     = &options,
+		.buffer      = m_prio1_repeat_sample_buffer,
+		.buffer_size = sizeof(m_prio1_repeat_sample_buffer),
+		.priority    = 1U,
+	};
+
+	init_adc();
+
+	for (int i = 0; i < PRIO1_REPEAT_BUFFER_SIZE; i++) {
+		m_prio1_repeat_sample_buffer[i] = INVALID_ADC_VALUE;
+	}
+
+	m_prio1_samplings_done = 0U;
+
+	(void)adc_sequence_init_dt(&adc_channels_prio1[0], &sequence);
+
+	for (int i = 1; i < adc_channels_prio1_count; i++) {
+		sequence.channels |= BIT(adc_channels_prio1[i].channel_id);
+	}
+
+	ret = adc_read_dt(&adc_channels_prio1[0], &sequence);
+	zassert_equal(ret, 0, "adc_read_dt() failed with code %d", ret);
+
+	zassert_equal(m_prio1_samplings_done, 10U, "%u samplings done, expected 10",
+		      m_prio1_samplings_done);
+	check_samples(2 * adc_channels_prio1_count, m_prio1_repeat_sample_buffer,
+		      PRIO1_REPEAT_BUFFER_SIZE);
+
+	return TC_PASS;
+}
+#endif /* defined(CONFIG_ADC_SEQUENCE_PRIORITY) */
+
+ZTEST(adc_basic, test_adc_repeated_samplings_prio1)
+{
+#if defined(CONFIG_ADC_SEQUENCE_PRIORITY)
+	zassert_true(test_task_repeated_samplings_prio1() == TC_PASS);
+#else
+	ztest_test_skip();
+#endif /* defined(CONFIG_ADC_SEQUENCE_PRIORITY) */
+}
+
+/*
  * test_adc_invalid_request
  */
 static int test_task_invalid_request(void)
