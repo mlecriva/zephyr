@@ -313,6 +313,7 @@ struct adc_sub_stm32_data {
 #ifdef CONFIG_ADC_STM32_INJECTED_CHANNELS
 	struct adc_context inj_ctx;
 	adc_data_size_t *inj_buffer;
+	adc_data_size_t *inj_repeat_buffer;
 	uint32_t inj_channels;
 	uint8_t inj_channel_count;
 #endif /* CONFIG_ADC_STM32_INJECTED_CHANNELS */
@@ -1678,6 +1679,8 @@ static void adc_context_start_sampling(struct adc_context *ctx)
 			CONTAINER_OF(ctx, struct adc_sub_stm32_data, inj_ctx);
 		const struct device *inj_dev = inj_data->dev;
 
+		inj_data->inj_repeat_buffer = inj_data->inj_buffer;
+
 		adc_stm32_start_inj_conversion(inj_dev);
 		return;
 	}
@@ -1703,6 +1706,18 @@ static void adc_context_start_sampling(struct adc_context *ctx)
 static void adc_context_update_buffer_pointer(struct adc_context *ctx,
 					      bool repeat_sampling)
 {
+#ifdef CONFIG_ADC_STM32_INJECTED_CHANNELS
+	if (ctx->sequence.priority == STM32_INJ_SEQ_PRIORITY) {
+		struct adc_sub_stm32_data *inj_data =
+			CONTAINER_OF(ctx, struct adc_sub_stm32_data, inj_ctx);
+
+		if (repeat_sampling) {
+			inj_data->inj_buffer = inj_data->inj_repeat_buffer;
+		}
+		return;
+	}
+#endif /* CONFIG_ADC_STM32_INJECTED_CHANNELS */
+
 	struct adc_sub_stm32_data *data = CONTAINER_OF(ctx, struct adc_sub_stm32_data, ctx);
 
 	if (repeat_sampling) {
